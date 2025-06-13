@@ -6,7 +6,7 @@ import { format, isToday, isYesterday } from 'date-fns';
 import { getChatDisplayName } from '../utils/chatUtils';
 
 const ChatList: React.FC = () => {
-  const { chats, activeChat, setActiveChat, messages } = useChat();
+  const { chats, activeChat, setActiveChat, messages, unreadCounts } = useChat();
   const { user } = useUser();
 
   const formatTime = (dateString: string) => {
@@ -73,11 +73,19 @@ const ChatList: React.FC = () => {
                       }`}>
                         {getChatDisplayNameLocal(chat)}
                       </h3>
-                      {lastMessage && (
-                        <span className="text-xs text-gray-500 ml-2">
-                          {formatTime(lastMessage.timestamp)}
-                        </span>
-                      )}
+                      <div className="flex items-center space-x-2">
+                        {lastMessage && (
+                          <span className="text-xs text-gray-500">
+                            {formatTime(lastMessage.timestamp)}
+                          </span>
+                        )}
+                        {/* Unread count badge */}
+                        {unreadCounts[chat.id] && unreadCounts[chat.id] > 0 && (
+                          <div className="bg-red-500 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center">
+                            {unreadCounts[chat.id] > 99 ? '99+' : unreadCounts[chat.id]}
+                          </div>
+                        )}
+                      </div>
                     </div>
                     
                     {lastMessage ? (

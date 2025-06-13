@@ -15,16 +15,22 @@ class ApiService {
     };
 
     try {
+      console.log(`Making API request to: ${url}`);
       const response = await fetch(url, config);
       
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+        const errorText = await response.text();
+        console.error(`API Error ${response.status}:`, errorText);
+        throw new Error(`HTTP error! status: ${response.status} - ${errorText}`);
       }
       
       const data = await response.json();
       return data;
     } catch (error) {
       console.error(`API request failed: ${endpoint}`, error);
+      if (error instanceof Error && error.message.includes('fetch')) {
+        console.error('Network error - check if backend is running on:', API_BASE_URL);
+      }
       throw error;
     }
   }

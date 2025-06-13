@@ -29,18 +29,18 @@ class ChatService {
   }
 
   async getChatMessages(chatId: number, take = 50, skip = 0): Promise<Message[]> {
-    return apiService.get<Message[]>(`/chat/${chatId}/messages?take=${take}&skip=${skip}`);
+    return apiService.get<Message[]>(`/chats/${chatId}/messages?take=${take}&skip=${skip}`);
   }
 
   async sendMessage(chatId: number, senderId: number, content: string): Promise<Message> {
-    return apiService.post<Message>(`/chat/${chatId}/messages`, {
+    return apiService.post<Message>(`/chats/${chatId}/messages`, {
       senderId,
       content,
     });
   }
 
   async updateMessageStatus(chatId: number, messageId: number, status: string): Promise<void> {
-    return apiService.put(`/chat/${chatId}/messages/${messageId}/status`, {
+    return apiService.put(`/chats/${chatId}/messages/${messageId}/status`, {
       status,
     });
   }

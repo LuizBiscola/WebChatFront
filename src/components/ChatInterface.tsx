@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { LogOut, Users, Plus } from 'lucide-react';
 import { useUser } from '../contexts/UserContext';
 import { useChat } from '../contexts/ChatContext';
@@ -6,6 +6,7 @@ import ChatList from './ChatList';
 import ChatWindow from './ChatWindow';
 import CreateChatModal from './CreateChatModal';
 import ConnectionStatus from './ConnectionStatus';
+import NewMessageNotification from './NewMessageNotification';
 
 interface ChatInterfaceProps {
   onLogout: () => void;
@@ -13,8 +14,35 @@ interface ChatInterfaceProps {
 
 const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
   const { user } = useUser();
-  const { activeChat, isLoading } = useChat();
+  const { activeChat, isLoading, chats, setActiveChat, setOnNewMessage } = useChat();
   const [showCreateChat, setShowCreateChat] = useState(false);
+  const [notification, setNotification] = useState<{
+    show: boolean;
+    chatId: number;
+    senderName: string;
+    message: string;
+  } | null>(null);
+
+  // Listen for new messages to show notifications
+  useEffect(() => {
+    // Configurar callback para notificações de mensagens
+    const handleNewMessage = (chatId: number, senderName: string, content: string) => {
+      console.log('🔔 New message notification:', { chatId, senderName, content });
+      setNotification({
+        show: true,
+        chatId,
+        senderName,
+        message: content
+      });
+    };
+
+    setOnNewMessage(handleNewMessage);
+
+    // Cleanup
+    return () => {
+      setOnNewMessage(null);
+    };
+  }, [setOnNewMessage]);
 
   if (isLoading) {
     return (
@@ -97,6 +125,24 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ onLogout }) => {
       {/* Create Chat Modal */}
       {showCreateChat && (
         <CreateChatModal onClose={() => setShowCreateChat(false)} />
+      )}
+
+      {/* New Message Notification */}
+      {notification && (
+        <NewMessageNotification
+          show={notification.show}
+          senderName={notification.senderName}
+          message={notification.message}
+          onClose={() => setNotification(null)}
+          onClick={() => {
+            // Find and open the chat
+            const chat = chats.find(c => c.id === notification.chatId);
+            if (chat) {
+              setActiveChat(chat);
+            }
+            setNotification(null);
+          }}
+        />
       )}
     </div>
   );

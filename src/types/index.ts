@@ -28,7 +28,7 @@ export interface Message {
   sender: User;
   content: string;
   timestamp: string;
-  status: 'sent' | 'delivered' | 'read';
+  status: 'sent' | 'delivered' | 'read' | 'failed';
 }
 
 export interface OnlineUser {

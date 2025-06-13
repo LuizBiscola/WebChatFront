@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, CheckCheck } from 'lucide-react';
+import { Check, CheckCheck, AlertCircle } from 'lucide-react';
 import { Message } from '../types';
 import { format } from 'date-fns';
 
@@ -21,6 +21,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isOwn, showAvata
       case 'delivered':
       case 'read':
         return <CheckCheck className="w-4 h-4" />;
+      case 'failed':
+        return <AlertCircle className="w-4 h-4 text-red-500" />;
       default:
         return null;
     }
@@ -33,7 +35,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isOwn, showAvata
         {!isOwn && showAvatar && (
           <div className="w-8 h-8 bg-gradient-to-r from-blue-400 to-indigo-400 rounded-full flex items-center justify-center flex-shrink-0">
             <span className="text-white text-sm font-semibold">
-              {message.sender.username.charAt(0).toUpperCase()}
+              {message.sender?.username?.charAt(0).toUpperCase() || '?'}
             </span>
           </div>
         )}
@@ -45,7 +47,9 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isOwn, showAvata
         {/* Message Bubble */}
         <div
           className={`px-4 py-2 rounded-2xl ${
-            isOwn
+            message.status === 'failed'
+              ? 'bg-red-100 text-red-800 border border-red-200 rounded-br-md'
+              : isOwn
               ? 'bg-primary-500 text-white rounded-br-md'
               : 'bg-white text-gray-900 rounded-bl-md shadow-sm border border-gray-100'
           }`}
@@ -53,7 +57,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isOwn, showAvata
           {/* Sender name for group chats */}
           {!isOwn && showAvatar && (
             <p className="text-xs font-medium text-primary-600 mb-1">
-              {message.sender.username}
+              {message.sender?.username || 'Unknown User'}
             </p>
           )}
           

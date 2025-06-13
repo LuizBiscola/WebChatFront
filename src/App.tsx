@@ -3,6 +3,7 @@ import { ChatProvider } from './contexts/ChatContext';
 import { UserProvider } from './contexts/UserContext';
 import LoginScreen from './components/LoginScreen';
 import ChatInterface from './components/ChatInterface';
+import ErrorBoundary from './components/ErrorBoundary';
 import { User } from './types';
 
 function App() {
@@ -47,11 +48,13 @@ function App() {
   }
 
   return (
-    <UserProvider user={currentUser}>
-      <ChatProvider>
-        <ChatInterface onLogout={handleLogout} />
-      </ChatProvider>
-    </UserProvider>
+    <ErrorBoundary>
+      <UserProvider user={currentUser}>
+        <ChatProvider>
+          <ChatInterface onLogout={handleLogout} />
+        </ChatProvider>
+      </UserProvider>
+    </ErrorBoundary>
   );
 }
 

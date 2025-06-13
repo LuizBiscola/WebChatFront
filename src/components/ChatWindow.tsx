@@ -15,6 +15,7 @@ const ChatWindow: React.FC = () => {
   const [showDropdown, setShowDropdown] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number>();
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -23,8 +24,11 @@ const ChatWindow: React.FC = () => {
   const currentTypingUsers = activeChat ? typingUsers[activeChat.id] || [] : [];
 
   useEffect(() => {
+    console.log('🖥️ ChatWindow: chatMessages changed for chat', activeChat?.id);
+    console.log('📝 Messages count:', chatMessages.length);
+    console.log('📋 Messages:', chatMessages.map(m => ({ id: m.id, content: m.content, sender: m.senderId })));
     scrollToBottom();
-  }, [chatMessages]);
+  }, [chatMessages, activeChat?.id]);
 
   useEffect(() => {
     // Clean up typing timeout on unmount
@@ -53,7 +57,13 @@ const ChatWindow: React.FC = () => {
   }, [showDropdown]);
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current) {
+      console.log('Scrolling to bottom');
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'end'
+      });
+    }
   };
 
   const handleSendMessage = async (e: React.FormEvent) => {
@@ -62,6 +72,7 @@ const ChatWindow: React.FC = () => {
 
     const content = messageText.trim();
     setMessageText('');
+    setErrorMessage(null); // Clear previous errors
     
     // Stop typing indicator
     if (isTyping) {
@@ -73,7 +84,22 @@ const ChatWindow: React.FC = () => {
       await sendMessage(activeChat.id, content);
     } catch (error) {
       console.error('Error sending message:', error);
-      // Optionally show error to user
+      
+      // Show user-friendly error message
+      if (error instanceof Error) {
+        if (error.message.includes('404')) {
+          setErrorMessage('Erro: Chat não encontrado. Verifique se o backend está rodando.');
+        } else if (error.message.includes('fetch') || error.message.includes('Network')) {
+          setErrorMessage('Erro de conexão. Verifique se o servidor está rodando.');
+        } else {
+          setErrorMessage('Erro ao enviar mensagem. Tente novamente.');
+        }
+      } else {
+        setErrorMessage('Erro desconhecido ao enviar mensagem.');
+      }
+      
+      // Clear error after 5 seconds
+      setTimeout(() => setErrorMessage(null), 5000);
     }
   };
 
@@ -269,6 +295,13 @@ const ChatWindow: React.FC = () => {
 
       {/* Message Input */}
       <div className="bg-white border-t border-gray-200 p-4">
+        {/* Error Message */}
+        {errorMessage && (
+          <div className="mb-3 p-3 bg-red-100 border border-red-300 rounded-lg text-red-700 text-sm">
+            {errorMessage}
+          </div>
+        )}
+        
         <form onSubmit={handleSendMessage} className="flex items-center space-x-3">
           <div className="flex-1 relative">
             <input
