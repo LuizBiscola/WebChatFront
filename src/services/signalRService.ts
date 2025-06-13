@@ -5,62 +5,55 @@ import environment from '../config/environment';
 class SignalRService {
   private connection: signalR.HubConnection | null = null;
   private isConnected = false;
-  private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
 
   async start(): Promise<void> {
-    if (this.connection && this.isConnected) {
+    if (this.connection) {
       return;
     }
 
+    console.log('SignalR: Initializing connection...');
+    
+    this.connection = new signalR.HubConnectionBuilder()
+      .withUrl(environment.signalRUrl)
+      .configureLogging(signalR.LogLevel.Information)
+      .withAutomaticReconnect([0, 2000, 10000, 30000])
+      .build();
+
+    this.setupConnectionEvents();
+
     try {
-      await this.createConnection(environment.signalRUrl);
+      console.log('SignalR: Starting connection...');
+      await this.connection.start();
+      this.isConnected = true;
+      this.onConnectionStateChanged?.(true);
+      console.log('SignalR Connected successfully');
     } catch (error) {
-      console.warn('HTTPS SignalR connection failed, trying HTTP fallback...', error);
+      console.error('SignalR Connection Error:', error);
+      
+      // Try HTTP fallback
       try {
-        await this.createConnection(environment.signalRUrlHttp);
+        console.log('SignalR: Trying HTTP fallback...');
+        await this.startWithFallback();
       } catch (fallbackError) {
-        console.error('Both HTTPS and HTTP SignalR connections failed:', fallbackError);
+        console.error('SignalR Fallback Connection Error:', fallbackError);
         throw fallbackError;
       }
     }
   }
 
-  private async createConnection(url: string): Promise<void> {
-    // Close existing connection if any
-    if (this.connection) {
-      await this.connection.stop();
-      this.connection = null;
-    }
-
-    console.log(`SignalR: Attempting to connect to ${url}`);
-
+  private async startWithFallback(): Promise<void> {
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl(url, {
-        skipNegotiation: false,
-        transport: signalR.HttpTransportType.WebSockets | 
-                  signalR.HttpTransportType.ServerSentEvents | 
-                  signalR.HttpTransportType.LongPolling,
-        withCredentials: false,
-      })
+      .withUrl(environment.signalRUrlHttp)
       .configureLogging(signalR.LogLevel.Information)
-      .withAutomaticReconnect({
-        nextRetryDelayInMilliseconds: (retryContext) => {
-          if (retryContext.previousRetryCount >= this.maxReconnectAttempts) {
-            return null; // Stop retrying
-          }
-          return Math.min(1000 * Math.pow(2, retryContext.previousRetryCount), 30000);
-        }
-      })
+      .withAutomaticReconnect([0, 2000, 10000, 30000])
       .build();
 
     this.setupConnectionEvents();
-
+    
     await this.connection.start();
     this.isConnected = true;
-    this.reconnectAttempts = 0;
     this.onConnectionStateChanged?.(true);
-    console.log(`SignalR: Connected successfully to ${url}`);
+    console.log('SignalR Connected via HTTP fallback');
   }
 
   private setupConnectionEvents(): void {
@@ -158,31 +151,7 @@ class SignalRService {
   onConnectionStateChanged?: (isConnected: boolean) => void;
 
   constructor() {
-    // Set up event listeners when connection is established
-    this.setupEventListeners();
-  }
-
-  private setupEventListeners(): void {
-    // We'll set up listeners after connection is established
-    setTimeout(() => {
-      if (this.connection) {
-        this.connection.on('ReceiveMessage', (messageData: MessageData) => {
-          this.onReceiveMessage?.(messageData);
-        });
-
-        this.connection.on('UserOnline', (userId: number, username: string) => {
-          this.onUserOnline?.(userId, username);
-        });
-
-        this.connection.on('UserOffline', (userId: number, username: string) => {
-          this.onUserOffline?.(userId, username);
-        });
-
-        this.connection.on('UserTyping', (userId: number, username: string, isTyping: boolean) => {
-          this.onUserTyping?.(userId, username, isTyping);
-        });
-      }
-    }, 100);
+    // Event listeners will be set up when connection is established
   }
 }
 
