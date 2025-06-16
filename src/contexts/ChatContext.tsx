@@ -4,6 +4,7 @@ import { useUser } from './UserContext';
 import { chatService } from '../services/chatService';
 import { signalRService } from '../services/signalRService';
 import { normalizeChat } from '../utils/chatUtils';
+import { messageEmitter } from '../utils/messageEmitter';
 
 interface ChatState {
   chats: Chat[];
@@ -14,6 +15,7 @@ interface ChatState {
   unreadCounts: { [chatId: number]: number };
   isConnected: boolean;
   isLoading: boolean;
+  messageUpdateTrigger: number; // Add this to force re-renders
 }
 
 type ChatAction =
@@ -42,6 +44,7 @@ const initialState: ChatState = {
   unreadCounts: {},
   isConnected: false,
   isLoading: true,
+  messageUpdateTrigger: 0,
 };
 
 function chatReducer(state: ChatState, action: ChatAction): ChatState {
@@ -101,27 +104,46 @@ function chatReducer(state: ChatState, action: ChatAction): ChatState {
       }
       
       // Verificar se a mensagem já existe para evitar duplicatas
-      // Simplificar verificação de duplicatas
-      const messageExists = currentMessages.some(msg => 
-        (msg.senderId === newMessage.senderId && 
-         msg.content === newMessage.content && 
-         Math.abs(new Date(msg.timestamp).getTime() - new Date(newMessage.timestamp).getTime()) < 2000)
-      );
+      // Verificação mais simples - apenas por ID se disponível
+      const messageExists = currentMessages.some(msg => {
+        // Se ambas as mensagens têm ID numérico válido, comparar por ID
+        if (typeof msg.id === 'number' && typeof newMessage.id === 'number' && 
+            msg.id > 0 && newMessage.id > 0) {
+          return msg.id === newMessage.id;
+        }
+        
+        // Caso contrário, verificar por conteúdo, sender e timestamp próximo
+        const sameContent = msg.senderId === newMessage.senderId && 
+                           msg.content === newMessage.content;
+        const timeClose = Math.abs(new Date(msg.timestamp).getTime() - new Date(newMessage.timestamp).getTime()) < 500;
+        
+        return sameContent && timeClose;
+      });
       
       if (messageExists) {
-        console.log('⚠️ Duplicate message detected, skipping:', newMessage);
+        console.log('⚠️ Duplicate message detected, skipping:', {
+          id: newMessage.id,
+          content: newMessage.content.substring(0, 20) + '...',
+          sender: newMessage.senderId
+        });
         return state;
       }
       
       console.log('✅ Adding new message to chat', chatId, ':', newMessage.content);
       console.log('📊 Messages before:', currentMessages.length, 'after:', currentMessages.length + 1);
       
+      const newMessagesArray = [...currentMessages, newMessage];
+      
+      // Emit event for direct component updates
+      messageEmitter.emit('messageAdded', { chatId, message: newMessage });
+      
       return {
         ...state,
         messages: {
           ...state.messages,
-          [chatId]: [...currentMessages, newMessage],
+          [chatId]: newMessagesArray,
         },
+        messageUpdateTrigger: state.messageUpdateTrigger + 1, // Force re-render
       };
     
     case 'UPDATE_MESSAGE':
@@ -235,7 +257,7 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         
         // Set up event listeners
         signalRService.onReceiveMessage = (messageData: MessageData) => {
-          console.log('🔔 SignalR: Received message data:', messageData);
+          console.log('� SIGNALR: Message received via SignalR!', messageData);
           console.log('📍 Current active chat ID:', activeChatRef.current?.id);
           console.log('📨 Message chat ID:', messageData.chatId);
           
@@ -252,9 +274,20 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
             console.log('📱 Message for INACTIVE chat:', messageData.chatId);
           }
           
-          // Adicionar a mensagem SEMPRE
+          // Adicionar a mensagem SEMPRE - garantir que o estado seja atualizado
           console.log('➕ Adding message to state...');
+          
+          // Forçar uma nova referência do objeto messages
           dispatch({ type: 'ADD_MESSAGE', payload: messageData });
+          
+          // Forçar re-render do componente ativo
+          if (isActiveChat) {
+            console.log('🔄 Forcing active chat component update...');
+            // Trigger adicional para garantir que o componente seja re-renderizado
+            setTimeout(() => {
+              dispatch({ type: 'SET_LOADING', payload: false });
+            }, 10);
+          }
           
           // Se não é o chat ativo e não é mensagem própria, incrementar contador
           if (!isActiveChat && !isOwnMessage) {
@@ -274,10 +307,12 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         };
 
         signalRService.onUserOnline = (userId: number, username: string) => {
+          console.log('🟢 SignalR: User came online:', userId, username);
           dispatch({ type: 'USER_ONLINE', payload: { userId, username } });
         };
 
         signalRService.onUserOffline = (userId: number, _username: string) => {
+          console.log('🔴 SignalR: User went offline:', userId);
           dispatch({ type: 'USER_OFFLINE', payload: { userId } });
         };
 
@@ -307,11 +342,14 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
         };
 
         // Join user
+        console.log('🔗 Joining SignalR user:', user.id, user.username);
         await signalRService.joinUser(user.id, user.username);
         
         // Load initial data
+        console.log('📋 Loading initial chats...');
         await loadChats();
         
+        console.log('✅ SignalR and chat initialization complete!');
         dispatch({ type: 'SET_LOADING', payload: false });
       } catch (error) {
         console.error('Error initializing chat:', error);
@@ -475,17 +513,25 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
   };
 
   const setActiveChat = (chat: Chat | null) => {
+    console.log('🎯 Setting active chat:', chat?.id);
     dispatch({ type: 'SET_ACTIVE_CHAT', payload: chat });
     
     if (chat) {
+      console.log('📌 Clearing unread count for chat:', chat.id);
       // Clear unread count for the selected chat
       dispatch({ type: 'CLEAR_UNREAD', payload: { chatId: chat.id } });
       
+      console.log('📬 Loading messages for chat:', chat.id);
       // Load messages for the active chat
       loadMessages(chat.id);
       
+      console.log('🔗 Joining SignalR chat group:', chat.id);
       // Join the chat room
-      signalRService.joinChat(chat.id);
+      signalRService.joinChat(chat.id).then(() => {
+        console.log('✅ Successfully joined SignalR chat group:', chat.id);
+      }).catch((error) => {
+        console.error('❌ Failed to join SignalR chat group:', chat.id, error);
+      });
     }
   };
 
@@ -559,6 +605,80 @@ export const ChatProvider: React.FC<ChatProviderProps> = ({ children }) => {
 
   const setOnNewMessage = (callback: ((chatId: number, senderName: string, content: string) => void) | null) => {
     newMessageCallbackRef.current = callback;
+  };
+
+  // Função de debug para testar se o sistema funciona manualmente
+  const testManualMessage = () => {
+    if (activeChatRef.current) {
+      const testMessage = {
+        id: Date.now(),
+        chatId: activeChatRef.current.id,
+        senderId: 999,
+        senderUsername: 'Test User',
+        content: `Test message at ${new Date().toLocaleTimeString()}`,
+        timestamp: new Date().toISOString(),
+        status: 'sent'
+      };
+      
+      console.log('🧪 Manual test: Adding message:', testMessage);
+      dispatch({ type: 'ADD_MESSAGE', payload: testMessage });
+    } else {
+      console.log('❌ No active chat for manual test');
+    }
+  };
+
+  // Expor para debug no console
+  (window as any).testManualMessage = testManualMessage;
+  (window as any).debugChatState = () => {
+    console.log('🔍 Debug Chat State:');
+    console.log('- Active Chat:', activeChatRef.current);
+    console.log('- All Messages:', state.messages);
+    console.log('- SignalR Connected:', state.isConnected);
+    console.log('- SignalR Service:', signalRService);
+    console.log('- SignalR Connection State:', signalRService.isConnected);
+  };
+  
+  // Nova função para testar conexão SignalR
+  (window as any).testSignalRConnection = async () => {
+    console.log('🧪 Testing SignalR Connection...');
+    console.log('- IsConnected:', state.isConnected);
+    console.log('- SignalR Service connected:', signalRService.isConnected);
+    
+    if (activeChatRef.current) {
+      try {
+        console.log('- Trying to join chat:', activeChatRef.current.id);
+        await signalRService.joinChat(activeChatRef.current.id);
+        console.log('✅ Successfully joined chat via SignalR');
+      } catch (error) {
+        console.error('❌ Failed to join chat via SignalR:', error);
+      }
+    }
+  };
+  
+  // Função para simular recebimento de mensagem via SignalR
+  (window as any).simulateSignalRMessage = () => {
+    if (activeChatRef.current) {
+      const testSignalRMessage = {
+        id: Date.now(),
+        chatId: activeChatRef.current.id,
+        senderId: 999,
+        senderUsername: 'SignalR Test User',
+        content: `Test SignalR message at ${new Date().toLocaleTimeString()}`,
+        timestamp: new Date().toISOString(),
+        status: 'sent'
+      };
+      
+      console.log('🧪 Simulating SignalR message receipt:', testSignalRMessage);
+      
+      // Simular recebimento via SignalR
+      if (signalRService.onReceiveMessage) {
+        signalRService.onReceiveMessage(testSignalRMessage);
+      } else {
+        console.error('❌ onReceiveMessage handler not set');
+      }
+    } else {
+      console.log('❌ No active chat for SignalR simulation');
+    }
   };
 
   // Função de teste para verificar se a atualização funciona

@@ -6,9 +6,10 @@ import MessageBubble from './MessageBubble';
 import TypingIndicator from './TypingIndicator';
 import ConfirmationModal from './ConfirmationModal';
 import { getChatDisplayName } from '../utils/chatUtils';
+import { messageEmitter } from '../utils/messageEmitter';
 
 const ChatWindow: React.FC = () => {
-  const { activeChat, messages, sendMessage, sendTyping, typingUsers, deleteChat } = useChat();
+  const { activeChat, messages, sendMessage, sendTyping, typingUsers, deleteChat, messageUpdateTrigger } = useChat();
   const { user } = useUser();
   const [messageText, setMessageText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -16,19 +17,114 @@ const ChatWindow: React.FC = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [, forceUpdate] = useState({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const typingTimeoutRef = useRef<number>();
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const lastMessageCountRef = useRef<number>(0);
+  const forceUpdateRef = useRef<() => void>();
 
-  const chatMessages = activeChat ? messages[activeChat.id] || [] : [];
+  // Create a force update function
+  useEffect(() => {
+    forceUpdateRef.current = () => {
+      console.log('🔄 Forcing component update');
+      forceUpdate({});
+    };
+    
+    // Expor função global para debug
+    (window as any).forceChatWindowUpdate = forceUpdateRef.current;
+  }, []);
+
+  // Get messages for current chat - force re-evaluation every time
+  const getChatMessages = () => {
+    const msgs = activeChat ? messages[activeChat.id] || [] : [];
+    // Removed excessive logging
+    return msgs;
+  };
+  
+  const chatMessages = getChatMessages();
   const currentTypingUsers = activeChat ? typingUsers[activeChat.id] || [] : [];
 
+  // Listen to message emitter for direct updates
   useEffect(() => {
-    console.log('🖥️ ChatWindow: chatMessages changed for chat', activeChat?.id);
-    console.log('📝 Messages count:', chatMessages.length);
-    console.log('📋 Messages:', chatMessages.map(m => ({ id: m.id, content: m.content, sender: m.senderId })));
-    scrollToBottom();
+    const handleMessageAdded = (data: { chatId: number; message: any }) => {
+      console.log('🎯 ChatWindow: Received messageAdded event', data);
+      if (activeChat && data.chatId === activeChat.id) {
+        console.log('📨 Message for current active chat - forcing update and scroll');
+        forceUpdateRef.current?.();
+        setTimeout(() => scrollToBottom(), 100);
+      }
+    };
+
+    messageEmitter.on('messageAdded', handleMessageAdded);
+    
+    return () => {
+      messageEmitter.off('messageAdded', handleMessageAdded);
+    };
+  }, [activeChat?.id]);
+
+  // Use the message update trigger to force re-renders
+  useEffect(() => {
+    console.log('🔄 Message update trigger changed:', messageUpdateTrigger);
+    console.log('📊 Chat messages length:', chatMessages.length);
+    if (activeChat && chatMessages.length > 0) {
+      console.log('📜 Scrolling to bottom due to trigger change');
+      scrollToBottom();
+    }
+  }, [messageUpdateTrigger, chatMessages.length]);
+
+  // Enhanced effect for monitoring messages
+  useEffect(() => {
+    console.log('🔄 ChatWindow: Enhanced message monitoring');
+    console.log('📊 Current chat:', activeChat?.id);
+    console.log('📊 Messages for this chat:', chatMessages.length);
+    console.log('📋 Latest messages:', chatMessages.slice(-3).map((m: any) => ({ id: m.id, content: m.content.substring(0, 20) + '...', sender: m.senderId })));
+    
+    if (chatMessages.length > lastMessageCountRef.current) {
+      console.log('📈 New messages detected! Scrolling...');
+      scrollToBottom();
+    }
+    lastMessageCountRef.current = chatMessages.length;
   }, [chatMessages, activeChat?.id]);
+
+  // Debug: Monitor messages changes
+  useEffect(() => {
+    console.log('🔍 ChatWindow: Messages object changed');
+    console.log('🗂️ All messages:', messages);
+    if (activeChat) {
+      console.log(`📁 Messages for chat ${activeChat.id}:`, messages[activeChat.id]);
+      console.log(`📊 Message count changed from ${lastMessageCountRef.current} to ${chatMessages.length}`);
+      lastMessageCountRef.current = chatMessages.length;
+    }
+  }, [messages, activeChat?.id, chatMessages.length]);
+
+  // Effect to scroll to bottom when messages change
+  const scrollToBottom = () => {
+    if (messagesEndRef.current) {
+      console.log('� Scrolling to bottom');
+      messagesEndRef.current.scrollIntoView({ 
+        behavior: 'smooth',
+        block: 'end'
+      });
+    }
+  };
+
+  // Scroll when messages change
+  useEffect(() => {
+    if (chatMessages.length > 0) {
+      console.log('�️ ChatWindow: Messages changed, scrolling to bottom');
+      scrollToBottom();
+    }
+  }, [chatMessages.length]);
+
+  // Separate effect to handle active chat changes
+  useEffect(() => {
+    if (activeChat) {
+      console.log('🔄 Active chat changed to:', activeChat.id);
+      lastMessageCountRef.current = chatMessages.length;
+      scrollToBottom();
+    }
+  }, [activeChat?.id]);
 
   useEffect(() => {
     // Clean up typing timeout on unmount
@@ -55,16 +151,6 @@ const ChatWindow: React.FC = () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [showDropdown]);
-
-  const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      console.log('Scrolling to bottom');
-      messagesEndRef.current.scrollIntoView({ 
-        behavior: 'smooth',
-        block: 'end'
-      });
-    }
-  };
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,6 +335,20 @@ const ChatWindow: React.FC = () => {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Temporary Debug Button - Remove in production */}
+      <div className="absolute top-4 right-4 z-50">
+        <button
+          onClick={() => {
+            console.log('🧪 Debug: Testing manual message');
+            (window as any).testManualMessage?.();
+          }}
+          className="bg-yellow-500 text-white px-2 py-1 rounded text-xs hover:bg-yellow-600"
+          title="Test Manual Message (Debug)"
+        >
+          Test Msg
+        </button>
       </div>
 
       {/* Delete Confirmation Modal */}

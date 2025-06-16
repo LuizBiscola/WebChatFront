@@ -4,7 +4,7 @@ import environment from '../config/environment';
 
 class SignalRService {
   private connection: signalR.HubConnection | null = null;
-  private isConnected = false;
+  public isConnected = false;
 
   async start(): Promise<void> {
     if (this.connection) {
@@ -14,7 +14,11 @@ class SignalRService {
     console.log('SignalR: Initializing connection...');
     
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl(environment.signalRUrl)
+      .withUrl(environment.signalRUrl, {
+        withCredentials: true,
+        skipNegotiation: false,
+        transport: signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.LongPolling
+      })
       .configureLogging(signalR.LogLevel.Information)
       .withAutomaticReconnect([0, 2000, 10000, 30000])
       .build();
@@ -43,7 +47,11 @@ class SignalRService {
 
   private async startWithFallback(): Promise<void> {
     this.connection = new signalR.HubConnectionBuilder()
-      .withUrl(environment.signalRUrlHttp)
+      .withUrl(environment.signalRUrlHttp, {
+        withCredentials: true,
+        skipNegotiation: false,
+        transport: signalR.HttpTransportType.LongPolling
+      })
       .configureLogging(signalR.LogLevel.Information)
       .withAutomaticReconnect([0, 2000, 10000, 30000])
       .build();
@@ -79,7 +87,8 @@ class SignalRService {
 
     // Setup message handlers
     this.connection.on('ReceiveMessage', (messageData: MessageData) => {
-      console.log('SignalR: Received message', messageData);
+      console.log('🚨 SignalR Service: ReceiveMessage event triggered!', messageData);
+      console.log('📡 SignalR: Raw message data:', JSON.stringify(messageData, null, 2));
       this.onReceiveMessage?.(messageData);
     });
 
